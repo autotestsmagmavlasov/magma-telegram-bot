@@ -1,0 +1,8 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - GITHUB_REPO=${GITHUB_REPO:-SpaceFex/autotests}
+      - GITHUB_WORKFLOW=${GITHUB_WORKFLOW:-aio-tests-integration.yml}
