@@ -114,8 +114,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Примеры:*\n"
         "• `/run @RegisterCompany`\n"
         "• `/run @RegisterCompany test3`\n"
-        "• `/run @RegisterCompany test3 MI-CY-6`\n"
-        '• `/run "@MI-TC-128 or @RegisterCompany" test5`\n\n'
+        "• `/run @RegisterPerson`\n"
+        '• `/run "@RegisterCompanyAPI" test5`\n\n'
+        '• `/run @RegisterIndividualAPI test5`\n\n'
         "*Серверы:* `test1` `test2` `test3` `test4` `test5` `staging` `demo`\n"
         "_(по умолчанию: `test5`)_\n\n"
         "*/status* — последние 5 запусков\n"
