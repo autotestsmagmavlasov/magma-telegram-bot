@@ -114,7 +114,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Примеры:*\n"
         "• `/run @RegisterCompany`\n"
         "• `/run @RegisterCompany test3`\n"
-        "• `/run @RegisterPerson`\n"
+        "• `/run @RegisterIndividual`\n"
         '• `/run "@RegisterCompanyAPI" test5`\n\n'
         '• `/run @RegisterIndividualAPI test5`\n\n'
         "*Серверы:* `test1` `test2` `test3` `test4` `test5` `staging` `demo`\n"
@@ -136,7 +136,7 @@ async def cmd_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "❌ Укажи тег.\n"
             "Пример: `/run @RegisterCompany`\n"
-            "Или:    `/run @RegisterCompany test3 MI-CY-6`",
+            "Или:    `/run @RegisterCompany test3`",
             parse_mode="Markdown",
         )
         return
