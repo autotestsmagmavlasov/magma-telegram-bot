@@ -16,9 +16,9 @@ import time
 from typing import Optional
 
 import aiohttp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Application
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    CommandHandler, CallbackQueryHandler,
+    Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ConversationHandler, ContextTypes, filters,
 )
 from telegram.helpers import escape_markdown
