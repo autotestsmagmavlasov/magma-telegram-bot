@@ -255,7 +255,6 @@ async def _watch_run(
     server: str,
     tag: str,
     user_id: int,
-    origin_chat_id: int,
     user_label: str,
 ) -> None:
     session   = app.bot_data["session"]
@@ -281,16 +280,6 @@ async def _watch_run(
                                        parse_mode="Markdown", disable_web_page_preview=True)
         except Exception:
             pass
-
-        if origin_chat_id and origin_chat_id != user_id:
-            try:
-                await app.bot.send_message(
-                    chat_id=origin_chat_id,
-                    text=f"{emoji} Тест завершён: *{conclusion}*\n👤 {user_label} • 🖥 {server} • 🏷 {tag}",
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass
 
         logger.info("Run %s finished: %s • user=%s", run_id, conclusion, user_label)
         return
@@ -513,21 +502,14 @@ async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def _execute_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    tag            = context.user_data["tag"]
-    server         = context.user_data["server"]
-    params         = context.user_data.get("params", "")
-    origin_chat_id = context.user_data.get("origin_chat_id")
-    user_id        = update.effective_user.id
+    tag        = context.user_data["tag"]
+    server     = context.user_data["server"]
+    params     = context.user_data.get("params", "")
+    user_id    = update.effective_user.id
     user_label     = _user_label(update)
     session        = _session(context)
 
     pending_dm = await context.bot.send_message(chat_id=user_id, text="⏳ Запускаю…")
-    pending_group = None
-    if origin_chat_id and origin_chat_id != user_id:
-        try:
-            pending_group = await context.bot.send_message(chat_id=origin_chat_id, text="⏳ Запускаю…")
-        except Exception:
-            pass
 
     dispatched_at = time.time()
     status = await _gh_post(
@@ -573,26 +555,15 @@ async def _execute_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await pending_dm.edit_text(dm_text, parse_mode="Markdown",
                                    disable_web_page_preview=True, reply_markup=cancel_kbd)
 
-        if pending_group:
-            await pending_group.edit_text(
-                f"🚀 Тесты запущены\n"
-                f"👤 {user_label}\n"
-                f"🖥 {server}\n"
-                f"🏷 {tag}"
-                + (f"\n📝 {params}" if params else "")
-            )
-
         if run_id:
             asyncio.create_task(_watch_run(
                 context.application, run_id, run_url,
-                server, tag, user_id, origin_chat_id, user_label,
+                server, tag, user_id, user_label,
             ))
 
         logger.info("Dispatched: user=%s tag=%s server=%s run_id=%s", user_label, tag, server, run_id)
     else:
         await pending_dm.edit_text(f"❌ Не удалось запустить тесты (HTTP {status})")
-        if pending_group:
-            await pending_group.edit_text(f"❌ Ошибка запуска — {user_label}, детали в ЛС.")
         logger.error("Dispatch failed: status=%s user=%s tag=%s server=%s", status, user_label, tag, server)
 
 
