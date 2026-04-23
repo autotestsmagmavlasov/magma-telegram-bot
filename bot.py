@@ -516,14 +516,15 @@ async def _execute_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         session,
         f"{GITHUB_API}/actions/workflows/{GITHUB_WORKFLOW}/dispatches",
         {"ref": "main", "inputs": {
-            "server":           server,
-            "project_key":      DEFAULT_PROJECT,
-            "cycle_key":        DEFAULT_CYCLE,
-            "test_tag":         tag,
-            "username":         "",
-            "password":         "",
-            "manager_username": "",
-            "test_data":        params,
+            "server":            server,
+            "project_key":       DEFAULT_PROJECT,
+            "cycle_key":         DEFAULT_CYCLE,
+            "test_tag":          tag,
+            "username":          "",
+            "password":          "",
+            "manager_username":  "",
+            "test_data":         params,
+            "telegram_chat_id":  str(user_id),
         }},
     )
 
