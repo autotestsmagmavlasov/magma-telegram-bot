@@ -542,10 +542,10 @@ async def _execute_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         safe_params = escape_markdown(params, version=2) if params else ""
         dm_text = (
-            f"✅ Тесты запущены\n\n"
+            f"✅ Команда запуска теста получена\n\n"
             f"Тег: `{tag}` • Сервер: `{server}`"
             + (f"\nПараметры: `{safe_params}`" if safe_params else "")
-            + f"\n[Открыть в GitHub]({run_url})"
+            # + f"\n[Открыть в GitHub]({run_url})"
         )
         cancel_kbd = (
             InlineKeyboardMarkup([[
