@@ -48,12 +48,14 @@ SERVERS = ["test1", "test2", "test3", "test4", "test5", "staging", "demo"]
 ALL_TAGS = [
     # UI — Company
     "@RegisterCompany", "@CompanyCounterpartyCreation", "@CompanyRepresentativesCreation",
-    "@CompanyWalletCreation", "@CompanyWalletTransactionCreate", "SubaccountCreation",
+    "@CompanyWalletCreation", "@CompanyWalletTransactionCreate", "@SubaccountCreation",
     # UI — Individual
     "@RegisterIndividual", "@IndividualCounterpartyCreation", "@IndividualWalletCreation",
     # API — Company
     "@RegisterCompanyAPI", "@CompanyCounterpartyCreationAPI", "@CompanyRepresentativesCreationAPI",
-    "@CompanyWalletCreationAPI", "@CompanyWalletTransactionCreateAPI", "SubaccountCreationAPI",
+    "@CompanyWalletCreationAPI", "@CompanyWalletTransactionCreateAPI",
+    "@CompanyFISetup",
+    "@SubaccountCreationAPI", "@SubaccountCreationAPIRegister", "@SubaccountCreationAPIFinalize",
     # API — Individual
     "@RegisterIndividualAPI", "@IndividualCounterpartyCreationAPI",
 ]
