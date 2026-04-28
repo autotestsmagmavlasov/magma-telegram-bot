@@ -12,10 +12,13 @@ Commands:
 import asyncio
 import os
 import logging
+import shlex
 import time
+from html import escape as html_escape
 from typing import Optional
 
 import aiohttp
+import paramiko
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -41,6 +44,13 @@ ALLOWED_USERS: set[str] = set(x.strip() for x in _raw.split(",") if x.strip())
 DEFAULT_SERVER  = os.environ.get("DEFAULT_SERVER", "test5")
 DEFAULT_CYCLE   = os.environ.get("DEFAULT_CYCLE", "MI-CY-6")
 DEFAULT_PROJECT = os.environ.get("DEFAULT_PROJECT", "MI")
+
+SSH_HOST          = os.environ.get("SSH_HOST", "159.223.208.94")
+SSH_PORT          = int(os.environ.get("SSH_PORT", "2266"))
+SSH_USER          = os.environ.get("SSH_USER", "qa")
+SSH_PASSWORD      = os.environ.get("SSH_PASSWORD", "testing_magma")
+DEFAULT_FE_BRANCH = os.environ.get("DEFAULT_FE_BRANCH", "magma")
+DEFAULT_BE_BRANCH = os.environ.get("DEFAULT_BE_BRANCH", "master")
 
 # ── Constants ────────────────────────────────────────────────────────────────
 SERVERS = ["test1", "test2", "test3", "test4", "test5", "staging", "demo"]
@@ -88,6 +98,7 @@ TAGS_PER_PAGE       = 10
 
 # Conversation states
 SELECT_SERVER, SELECT_TAG, ENTER_PARAMS = range(3)
+DEPLOY_SERVER, DEPLOY_FE, DEPLOY_BE, DEPLOY_CMDS = range(3, 7)
 
 # ── In-memory state ───────────────────────────────────────────────────────────
 _state_lock:   asyncio.Lock          = asyncio.Lock()
@@ -331,6 +342,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
         "🤖 *Доступные команды*\n\n"
+        "*/deploy* — задеплоить FE и BE на сервер по SSH\n"
         "*/run* — запустить тесты (интерактивно)\n"
         "*/status* — последние 5 запусков\n"
         "*/cancel* — отменить текущий запуск\n"
@@ -590,6 +602,268 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+# ── SSH helpers ───────────────────────────────────────────────────────────────
+
+def _server_num_suffix(server: str) -> str:
+    if server.startswith("test"):
+        n = server[4:]
+        return "" if n == "1" else n
+    return ""
+
+
+def _ssh_run_sync(cmd: str, timeout: int = 600) -> tuple[int, str]:
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER,
+                       password=SSH_PASSWORD, timeout=30)
+        _, stdout, stderr = client.exec_command(
+            f"bash --login -c {shlex.quote(cmd)}", timeout=timeout
+        )
+        exit_code = stdout.channel.recv_exit_status()
+        out = stdout.read().decode(errors="replace")
+        err = stderr.read().decode(errors="replace")
+        return exit_code, out + ("\n" + err if err.strip() else "")
+    finally:
+        client.close()
+
+
+async def _ssh_run(cmd: str, timeout: int = 600) -> tuple[int, str]:
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(None, lambda: _ssh_run_sync(cmd, timeout))
+    except Exception as e:
+        return -1, f"SSH ошибка: {e}"
+
+
+# ── /deploy conversation ──────────────────────────────────────────────────────
+
+DEPLOY_SERVERS = [s for s in SERVERS if s.startswith("test")]
+
+def _deploy_server_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(s, callback_data=f"dsrv:{s}") for s in DEPLOY_SERVERS],
+        [InlineKeyboardButton("❌ Отмена", callback_data="dcancel")],
+    ])
+
+
+async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not is_authorized(update):
+        await update.message.reply_text("❌ У вас нет прав.")
+        return ConversationHandler.END
+
+    user_id    = update.effective_user.id
+    is_private = update.effective_chat.id == user_id
+    context.user_data.clear()
+
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="🚀 *Деплой — Шаг 1/4: Выбери сервер*",
+            parse_mode="Markdown",
+            reply_markup=_deploy_server_keyboard(),
+        )
+        if not is_private:
+            await update.message.reply_text("📩 Продолжи в ЛС.", quote=True)
+    except Exception:
+        if not is_private:
+            await update.message.reply_text(
+                f"{_user_label(update)}, напиши боту в личку /start.",
+                quote=True,
+            )
+        return ConversationHandler.END
+
+    return DEPLOY_SERVER
+
+
+async def cb_deploy_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "dcancel":
+        await query.edit_message_text("❌ Отменено.")
+        return ConversationHandler.END
+
+    server = query.data.split(":", 1)[1]
+    context.user_data["deploy_server"] = server
+
+    await query.edit_message_text(
+        f"🖥 Сервер: `{server}`\n\n"
+        f"🚀 *Шаг 2/4 — FE ветка*\n"
+        f"Введи название ветки или /skip для `{DEFAULT_FE_BRANCH}`:",
+        parse_mode="Markdown",
+    )
+    return DEPLOY_FE
+
+
+async def msg_deploy_fe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["deploy_fe"] = update.message.text.strip() or DEFAULT_FE_BRANCH
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    return await _prompt_deploy_be(update, context)
+
+
+async def cmd_deploy_skip_fe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["deploy_fe"] = DEFAULT_FE_BRANCH
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    return await _prompt_deploy_be(update, context)
+
+
+async def _prompt_deploy_be(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    server  = context.user_data["deploy_server"]
+    fe      = context.user_data["deploy_fe"]
+    user_id = update.effective_user.id
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"🖥 Сервер: `{server}` • FE: `{fe}`\n\n"
+             f"🚀 *Шаг 3/4 — BE ветка*\n"
+             f"Введи название ветки или /skip для `{DEFAULT_BE_BRANCH}`:",
+        parse_mode="Markdown",
+    )
+    return DEPLOY_BE
+
+
+async def msg_deploy_be(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["deploy_be"] = update.message.text.strip() or DEFAULT_BE_BRANCH
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    return await _prompt_deploy_cmds(update, context)
+
+
+async def cmd_deploy_skip_be(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["deploy_be"] = DEFAULT_BE_BRANCH
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    return await _prompt_deploy_cmds(update, context)
+
+
+async def _prompt_deploy_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    server  = context.user_data["deploy_server"]
+    fe      = context.user_data["deploy_fe"]
+    be      = context.user_data["deploy_be"]
+    user_id = update.effective_user.id
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"🖥 Сервер: `{server}` • FE: `{fe}` • BE: `{be}`\n\n"
+             "🚀 *Шаг 4/4 — Доп. команды на BE*\n"
+             "Выполнятся после `php artisan migrate`.\n"
+             "Введи по одной команде на строке, или /skip чтобы пропустить.\n\n"
+             "_Пример:_\n`php artisan cache:clear`\n`php artisan config:cache`",
+        parse_mode="Markdown",
+    )
+    return DEPLOY_CMDS
+
+
+async def msg_deploy_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+    context.user_data["deploy_cmds"] = [c.strip() for c in text.splitlines() if c.strip()]
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    await _execute_deploy(update, context)
+    return ConversationHandler.END
+
+
+async def cmd_deploy_skip_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["deploy_cmds"] = []
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+    await _execute_deploy(update, context)
+    return ConversationHandler.END
+
+
+async def _execute_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    server     = context.user_data["deploy_server"]
+    fe         = context.user_data.get("deploy_fe", DEFAULT_FE_BRANCH)
+    be         = context.user_data.get("deploy_be", DEFAULT_BE_BRANCH)
+    extra      = context.user_data.get("deploy_cmds", [])
+    user_id    = update.effective_user.id
+    user_label = _user_label(update)
+
+    suffix  = _server_num_suffix(server)
+    fe_path = f"/home/qa/public_html/frontend{suffix}"
+    be_path = f"/home/qa/public_html/backend{suffix}"
+
+    cmd_parts = [
+        f"export FE={shlex.quote(fe)} BE={shlex.quote(be)}",
+        f"cd {fe_path}",
+        "git fetch",
+        'git_reload "$FE"',
+        "nvm use 12",
+        "npm run build",
+        f"cd {be_path}",
+        "git fetch",
+        'git_reload "$BE"',
+        "composer install",
+        "php artisan migrate",
+    ] + extra + [
+        'echo "BE_BRANCH=$(git branch --show-current)"',
+        f"cd {fe_path}",
+        'echo "FE_BRANCH=$(git branch --show-current)"',
+    ]
+    cmd = " && \\\n".join(cmd_parts)
+
+    extra_info = f" • +{len(extra)} доп.команд" if extra else ""
+    status_msg = await context.bot.send_message(
+        chat_id=user_id,
+        text=f"⏳ Деплой запущен...\n🖥 `{server}` • FE: `{fe}` • BE: `{be}`{extra_info}",
+        parse_mode="Markdown",
+    )
+    logger.info("Deploy started: user=%s server=%s fe=%s be=%s", user_label, server, fe, be)
+
+    exit_code, output = await _ssh_run(cmd)
+
+    fe_branch = fe
+    be_branch = be
+    display_lines = []
+    for line in output.splitlines():
+        if line.startswith("FE_BRANCH="):
+            fe_branch = line.split("=", 1)[1].strip()
+        elif line.startswith("BE_BRANCH="):
+            be_branch = line.split("=", 1)[1].strip()
+        else:
+            display_lines.append(line)
+    display_output = "\n".join(display_lines)
+
+    if len(display_output) > 1500:
+        display_output = "…(обрезано)\n" + display_output[-1500:]
+
+    if exit_code == 0:
+        header = (
+            f"✅ <b>Деплой завершён успешно</b>\n"
+            f"🖥 Сервер: <code>{server}</code>\n"
+            f"🌿 FE ветка: <code>{fe_branch}</code>\n"
+            f"🌿 BE ветка: <code>{be_branch}</code>\n\n"
+        )
+    else:
+        header = (
+            f"❌ <b>Деплой завершился с ошибкой</b> (код {exit_code})\n"
+            f"🖥 Сервер: <code>{server}</code>\n"
+            f"🌿 FE ветка: <code>{fe_branch}</code>\n"
+            f"🌿 BE ветка: <code>{be_branch}</code>\n\n"
+        )
+
+    result_text = header + f"<pre>{html_escape(display_output)}</pre>"
+    if len(result_text) > 4000:
+        result_text = result_text[:3950] + "…</pre>"
+
+    await status_msg.edit_text(result_text, parse_mode="HTML")
+    logger.info("Deploy done: user=%s server=%s exit=%s fe=%s be=%s",
+                user_label, server, exit_code, fe_branch, be_branch)
+
+
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 async def _post_init(app: Application) -> None:
@@ -633,9 +907,34 @@ def main() -> None:
         per_chat=False,
     )
 
+    deploy_conv = ConversationHandler(
+        entry_points=[CommandHandler("deploy", cmd_deploy)],
+        states={
+            DEPLOY_SERVER: [
+                CallbackQueryHandler(cb_deploy_server, pattern=r"^(dsrv:|dcancel$)"),
+            ],
+            DEPLOY_FE: [
+                CommandHandler("skip", cmd_deploy_skip_fe),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_deploy_fe),
+            ],
+            DEPLOY_BE: [
+                CommandHandler("skip", cmd_deploy_skip_be),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_deploy_be),
+            ],
+            DEPLOY_CMDS: [
+                CommandHandler("skip", cmd_deploy_skip_cmds),
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_deploy_cmds),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cmd_cancel)],
+        per_user=True,
+        per_chat=False,
+    )
+
     app.add_handler(CommandHandler("start",  cmd_start))
     app.add_handler(CommandHandler("help",   cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(deploy_conv)
     app.add_handler(run_conv)
     app.add_handler(CallbackQueryHandler(cb_cancel_run, pattern=r"^cancel_run:\d+$"))
 
