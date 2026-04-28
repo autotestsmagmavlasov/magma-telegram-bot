@@ -621,7 +621,7 @@ def _ssh_run_sync(cmd: str, timeout: int = 600) -> tuple[int, str]:
         client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER,
                        password=SSH_PASSWORD, timeout=30)
         _, stdout, stderr = client.exec_command(
-            f"bash --login -c {shlex.quote(cmd)}", timeout=timeout
+            f"bash -i -l -c {shlex.quote(cmd)}", timeout=timeout
         )
         exit_code = stdout.channel.recv_exit_status()
         out = stdout.read().decode(errors="replace")
@@ -800,7 +800,6 @@ async def _execute_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     be_path = f"/home/qa/public_html/backend{suffix}"
 
     cmd_parts = [
-        ". ~/.bashrc 2>/dev/null || true",
         f"export FE={shlex.quote(fe)} BE={shlex.quote(be)}",
         f"cd {fe_path}",
         "git fetch",
