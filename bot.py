@@ -462,21 +462,32 @@ async def cb_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return SELECT_TAG
 
+    _REGISTER_TAGS = {
+        "@RegisterCompany", "@RegisterCompanyAPI",
+        "@RegisterIndividual", "@RegisterIndividualAPI",
+    }
+
     tag    = query.data.split(":", 1)[1]
     server = context.user_data["server"]
     context.user_data["tag"] = tag
     context.user_data["kbd_msg_id"] = query.message.message_id
 
+    override_hint = ""
+    if tag not in _REGISTER_TAGS:
+        override_hint = (
+            "\nЗапуск на существующей компании:\n"
+            "  company.override.id=<id>\n"
+            "  + company.override.password=<pass> (если нужен логин как компания)\n"
+            "  + company.override.secret=<secret> (если 2FA не 000000)\n"
+        )
+
     await query.edit_message_text(
         f"🖥 Сервер: {server}\n"
         f"🏷 Тест: {tag}\n\n"
         "Шаг 3/3 — Параметры теста (необязательно):\n"
-        "Формат: key=value|key=value\n\n"
-        "Запуск на существующей компании:\n"
-        "  company.override.id=69f08d2206977ad1356e9df6\n"
-        "  + company.override.password=Qwerty123123_ (если нужен логин как компания)\n"
-        "  + company.override.secret=ABC123XYZ (если 2FA не 000000)\n\n"
-        "Отправь /skip чтобы использовать данные из feature-файла",
+        "Формат: key=value|key=value\n"
+        + override_hint +
+        "\nОтправь /skip чтобы использовать данные из feature-файла",
     )
     return ENTER_PARAMS
 
