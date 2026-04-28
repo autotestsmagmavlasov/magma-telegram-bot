@@ -471,8 +471,11 @@ async def cb_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"🖥 Сервер: {server}\n"
         f"🏷 Тест: {tag}\n\n"
         "Шаг 3/3 — Параметры теста (необязательно):\n"
-        "Формат: key=value|key=value\n"
-        "Пример: email=test@magma.mu|first_name=John\n\n"
+        "Формат: key=value|key=value\n\n"
+        "Запуск на существующей компании:\n"
+        "  company.override.id=69f08d2206977ad1356e9df6\n"
+        "  + company.override.password=Qwerty123123_ (если нужен логин как компания)\n"
+        "  + company.override.secret=ABC123XYZ (если 2FA не 000000)\n\n"
         "Отправь /skip чтобы использовать данные из feature-файла",
     )
     return ENTER_PARAMS
