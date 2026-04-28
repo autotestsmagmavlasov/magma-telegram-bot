@@ -800,6 +800,7 @@ async def _execute_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     be_path = f"/home/qa/public_html/backend{suffix}"
 
     cmd_parts = [
+        ". ~/.bashrc 2>/dev/null || true",
         f"export FE={shlex.quote(fe)} BE={shlex.quote(be)}",
         f"cd {fe_path}",
         "git fetch",
