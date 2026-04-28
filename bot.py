@@ -844,23 +844,23 @@ async def _execute_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         display_output = "…(обрезано)\n" + display_output[-1500:]
 
     if exit_code == 0:
-        header = (
+        result_text = (
             f"✅ <b>Деплой завершён успешно</b>\n"
             f"🖥 Сервер: <code>{server}</code>\n"
             f"🌿 FE ветка: <code>{fe_branch}</code>\n"
-            f"🌿 BE ветка: <code>{be_branch}</code>\n\n"
+            f"🌿 BE ветка: <code>{be_branch}</code>"
         )
     else:
-        header = (
+        error_text = f"<pre>{html_escape(display_output)}</pre>"
+        result_text = (
             f"❌ <b>Деплой завершился с ошибкой</b> (код {exit_code})\n"
             f"🖥 Сервер: <code>{server}</code>\n"
             f"🌿 FE ветка: <code>{fe_branch}</code>\n"
             f"🌿 BE ветка: <code>{be_branch}</code>\n\n"
+            + error_text
         )
-
-    result_text = header + f"<pre>{html_escape(display_output)}</pre>"
-    if len(result_text) > 4000:
-        result_text = result_text[:3950] + "…</pre>"
+        if len(result_text) > 4000:
+            result_text = result_text[:3950] + "…</pre>"
 
     await status_msg.edit_text(result_text, parse_mode="HTML")
     logger.info("Deploy done: user=%s server=%s exit=%s fe=%s be=%s",
