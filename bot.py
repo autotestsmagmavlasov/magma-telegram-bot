@@ -96,6 +96,12 @@ WATCH_INTERVAL      = 30
 WATCH_MAX_MINUTES   = 60
 TAGS_PER_PAGE       = 10
 
+OVERRIDE_TEMPLATES = [
+    ("🆔 Только ID",           "company.override.id=<id>"),
+    ("🔑 ID + пароль",         "company.override.id=<id>|company.override.password=<pass>"),
+    ("🔐 ID + пароль + 2FA",   "company.override.id=<id>|company.override.password=<pass>|company.override.secret=<secret>"),
+]
+
 # Conversation states
 SELECT_SERVER, SELECT_TAG, ENTER_PARAMS = range(3)
 DEPLOY_SERVER, DEPLOY_FE, DEPLOY_BE, DEPLOY_CMDS = range(3, 7)
@@ -155,6 +161,15 @@ def _tag_keyboard(query: str = "", page: int = 0) -> InlineKeyboardMarkup:
         buttons.append(nav)
 
     buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def _params_keyboard(show_overrides: bool) -> InlineKeyboardMarkup:
+    buttons: list[list[InlineKeyboardButton]] = []
+    if show_overrides:
+        for label, tmpl in OVERRIDE_TEMPLATES:
+            buttons.append([InlineKeyboardButton(label, callback_data=f"tmpl:{tmpl}")])
+    buttons.append([InlineKeyboardButton("⏭ /skip — данные из feature-файла", callback_data="tmpl:skip")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -472,22 +487,15 @@ async def cb_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["tag"] = tag
     context.user_data["kbd_msg_id"] = query.message.message_id
 
-    override_hint = ""
-    if tag not in _REGISTER_TAGS:
-        override_hint = (
-            "\nЗапуск на существующей компании:\n"
-            "  company.override.id=<id>\n"
-            "  + company.override.password=<pass> (если нужен логин как компания)\n"
-            "  + company.override.secret=<secret> (если 2FA не 000000)\n"
-        )
+    show_overrides = tag not in _REGISTER_TAGS
 
     await query.edit_message_text(
         f"🖥 Сервер: {server}\n"
         f"🏷 Тест: {tag}\n\n"
         "Шаг 3/3 — Параметры теста (необязательно):\n"
-        "Формат: key=value|key=value\n"
-        + override_hint +
-        "\nОтправь /skip чтобы использовать данные из feature-файла",
+        "Формат: key=value|key=value\n\n"
+        "Или выбери шаблон ниже:",
+        reply_markup=_params_keyboard(show_overrides),
     )
     return ENTER_PARAMS
 
@@ -527,6 +535,33 @@ async def cmd_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["params"] = ""
     await _execute_run(update, context)
     return ConversationHandler.END
+
+
+async def cb_params_template(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "tmpl:skip":
+        context.user_data["params"] = ""
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await _execute_run(update, context)
+        return ConversationHandler.END
+
+    tmpl = query.data[len("tmpl:"):]
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await context.bot.send_message(
+        chat_id=update.effective_user.id,
+        text=f"📋 Шаблон — скопируй, подставь значения и отправь:\n\n`{tmpl}`",
+        parse_mode="Markdown",
+    )
+    return ENTER_PARAMS
 
 
 async def _execute_run(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -912,6 +947,7 @@ def main() -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_search_tag),
             ],
             ENTER_PARAMS: [
+                CallbackQueryHandler(cb_params_template, pattern=r"^tmpl:"),
                 CommandHandler("skip", cmd_skip),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_params),
             ],
