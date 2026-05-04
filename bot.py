@@ -61,6 +61,7 @@ ALL_TAGS = [
     "@CompanyWalletCreation", "@CompanyWalletTransactionCreate", "@SubaccountCreation",
     # UI — Individual
     "@RegisterIndividual", "@IndividualCounterpartyCreation", "@IndividualWalletCreation",
+    "@IndividualWalletTransactionCreate",
     # API — Company
     "@RegisterCompanyAPI", "@CompanyCounterpartyCreationAPI", "@CompanyRepresentativesCreationAPI",
     "@CompanyWalletCreationAPI", "@CompanyWalletTransactionCreateAPI",
