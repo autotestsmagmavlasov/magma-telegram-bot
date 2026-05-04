@@ -696,6 +696,10 @@ def _deploy_server_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def _deploy_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="dcancel")]])
+
+
 async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not is_authorized(update):
         await update.message.reply_text("❌ У вас нет прав.")
@@ -741,6 +745,7 @@ async def cb_deploy_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         f"🚀 *Шаг 2/4 — FE ветка*\n"
         f"Введи название ветки или /skip для `{DEFAULT_FE_BRANCH}`:",
         parse_mode="Markdown",
+        reply_markup=_deploy_cancel_keyboard(),
     )
     return DEPLOY_FE
 
@@ -773,6 +778,7 @@ async def _prompt_deploy_be(update: Update, context: ContextTypes.DEFAULT_TYPE) 
              f"🚀 *Шаг 3/4 — BE ветка*\n"
              f"Введи название ветки или /skip для `{DEFAULT_BE_BRANCH}`:",
         parse_mode="Markdown",
+        reply_markup=_deploy_cancel_keyboard(),
     )
     return DEPLOY_BE
 
@@ -808,6 +814,7 @@ async def _prompt_deploy_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE
              "Введи по одной команде на строке, или /skip чтобы пропустить.\n\n"
              "_Пример:_\n`php artisan cache:clear`\n`php artisan config:cache`",
         parse_mode="Markdown",
+        reply_markup=_deploy_cancel_keyboard(),
     )
     return DEPLOY_CMDS
 
@@ -820,6 +827,13 @@ async def msg_deploy_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception:
         pass
     await _execute_deploy(update, context)
+    return ConversationHandler.END
+
+
+async def cb_deploy_cancel(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("❌ Деплой отменён.")
     return ConversationHandler.END
 
 
@@ -964,14 +978,17 @@ def main() -> None:
                 CallbackQueryHandler(cb_deploy_server, pattern=r"^(dsrv:|dcancel$)"),
             ],
             DEPLOY_FE: [
+                CallbackQueryHandler(cb_deploy_cancel, pattern=r"^dcancel$"),
                 CommandHandler("skip", cmd_deploy_skip_fe),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_deploy_fe),
             ],
             DEPLOY_BE: [
+                CallbackQueryHandler(cb_deploy_cancel, pattern=r"^dcancel$"),
                 CommandHandler("skip", cmd_deploy_skip_be),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_deploy_be),
             ],
             DEPLOY_CMDS: [
+                CallbackQueryHandler(cb_deploy_cancel, pattern=r"^dcancel$"),
                 CommandHandler("skip", cmd_deploy_skip_cmds),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_deploy_cmds),
             ],
