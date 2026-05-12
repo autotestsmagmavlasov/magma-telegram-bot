@@ -866,6 +866,7 @@ async def _execute_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "git fetch",
         'git_reload "$FE"',
         "nvm use 12",
+        "npm install",
         "npm run build",
         f"cd {be_path}",
         "git fetch",
