@@ -82,7 +82,7 @@ TAGS_BY_CATEGORY: dict[str, dict] = {
         ],
     },
     "api_client": {
-        "label": "🔌 API — Client",
+        "label": "🔌 API Client",
         "tags": [
             "@ClientRegisterCompanyAPI",
             "@ClientRegisterIndividualAPI",
@@ -98,7 +98,7 @@ TAGS_BY_CATEGORY: dict[str, dict] = {
         ],
     },
     "api_admin": {
-        "label": "🔌 API — Admin",
+        "label": "🔌 API Admin",
         "tags": [
             "@AdminCompanyRepresentativesCreationAPI",
             "@AdminCompanyWalletCreationAPI",
@@ -165,6 +165,24 @@ async def _set_active_run(server: str, info: dict) -> None:
 
 # ── Keyboard builders ─────────────────────────────────────────────────────────
 
+import re as _re
+
+_TAG_PREFIXES = [
+    "@ClientCompany", "@ClientIndividual", "@Client",
+    "@AdminCompany",  "@AdminIndividual",  "@Admin",
+]
+
+def _short_label(tag: str) -> str:
+    """Return a short human-readable button label for a tag."""
+    for prefix in _TAG_PREFIXES:
+        if tag.startswith(prefix):
+            rest = tag[len(prefix):]
+            # Split camelCase, keep sequences like 'API', 'EUR', 'RUB' intact
+            label = _re.sub(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z]{2})(?=[A-Z][a-z])", " ", rest)
+            return label.strip()
+    return tag
+
+
 def _server_keyboard() -> InlineKeyboardMarkup:
     def _label(s: str) -> str:
         return f"⚠️ {s}" if s in active_runs else s
@@ -210,7 +228,7 @@ def _tag_keyboard(query: str = "", page: int = 0, category: str = "") -> InlineK
         buttons.append([InlineKeyboardButton("— ничего не найдено —", callback_data="noop")])
     else:
         for t in page_tags:
-            buttons.append([InlineKeyboardButton(t, callback_data=f"tag:{t}")])
+            buttons.append([InlineKeyboardButton(_short_label(t), callback_data=f"tag:{t}")])
 
     nav: list[InlineKeyboardButton] = []
     if page > 0:
