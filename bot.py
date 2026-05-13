@@ -55,21 +55,59 @@ DEFAULT_BE_BRANCH = os.environ.get("DEFAULT_BE_BRANCH", "master")
 # ── Constants ────────────────────────────────────────────────────────────────
 SERVERS = ["test1", "test2", "test3", "test4", "test5", "staging", "demo"]
 
-ALL_TAGS = [
-    # UI — Company
-    "@RegisterCompany", "@CompanyCounterpartyCreation", "@CompanyRepresentativesCreation",
-    "@CompanyWalletCreation", "@CompanyWalletTransactionCreate", "@SubaccountCreation",
-    # UI — Individual
-    "@RegisterIndividual", "@IndividualCounterpartyCreation", "@IndividualWalletCreation",
-    "@IndividualWalletTransactionCreate",
-    # API — Company
-    "@RegisterCompanyAPI", "@CompanyCounterpartyCreationAPI", "@CompanyRepresentativesCreationAPI",
-    "@CompanyWalletCreationAPI", "@CompanyWalletTransactionCreateAPI",
-    "@CompanyFISetup",
-    "@SubaccountCreationAPI", "@SubaccountCreationAPIRegister", "@SubaccountCreationAPIFinalize",
-    # API — Individual
-    "@RegisterIndividualAPI", "@IndividualCounterpartyCreationAPI",
-]
+TAGS_BY_CATEGORY: dict[str, dict] = {
+    "client_ui": {
+        "label": "👤 Client UI",
+        "tags": [
+            "@ClientRegisterCompany",
+            "@ClientCompanyCounterpartyCreation",
+            "@ClientCompanyCounterpartyCreationEUR",
+            "@ClientCompanyCounterpartyCreationRub",
+            "@ClientCompanySubaccountCreation",
+            "@ClientRegisterIndividual",
+            "@ClientIndividualCounterpartyCreation",
+        ],
+    },
+    "admin_ui": {
+        "label": "🔧 Admin UI",
+        "tags": [
+            "@AdminCompanyRepresentativesCreation",
+            "@AdminCompanyWalletCreation",
+            "@AdminCompanyWalletTransactionCreate",
+            "@AdminCompanyWalletFxCorrection",
+            "@AdminCompanyWalletFxCorrectionCredit",
+            "@AdminCompanyWalletFxCorrectionDebit",
+            "@AdminIndividualWalletCreation",
+            "@AdminIndividualWalletTransactionCreate",
+        ],
+    },
+    "api_client": {
+        "label": "🔌 API — Client",
+        "tags": [
+            "@ClientRegisterCompanyAPI",
+            "@ClientRegisterIndividualAPI",
+            "@ClientCompanyCounterpartyCreationAPI",
+            "@ClientCompanyCounterpartyCreationRubAPI",
+            "@ClientIndividualCounterpartyCreationAPI",
+            "@ClientCompanyFISetup",
+            "@ClientCompanySubaccountCreationAPI",
+            "@ClientCompanySubaccountCreationAPIRegister",
+            "@ClientCompanySubaccountCreationAPIFinalize",
+            "@ClientCompanySubaccountRegistrationAPI",
+            "@ClientCompanySubaccountCreationDebugAPI",
+        ],
+    },
+    "api_admin": {
+        "label": "🔌 API — Admin",
+        "tags": [
+            "@AdminCompanyRepresentativesCreationAPI",
+            "@AdminCompanyWalletCreationAPI",
+            "@AdminCompanyWalletTransactionCreationAPI",
+        ],
+    },
+}
+
+ALL_TAGS = [t for cat in TAGS_BY_CATEGORY.values() for t in cat["tags"]]
 
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 GH_HEADERS = {
@@ -138,29 +176,52 @@ def _server_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _tag_keyboard(query: str = "", page: int = 0) -> InlineKeyboardMarkup:
-    tags = [t for t in ALL_TAGS if query.lower() in t.lower()] if query else ALL_TAGS
+def _category_keyboard() -> InlineKeyboardMarkup:
+    items = list(TAGS_BY_CATEGORY.items())
+    buttons: list[list[InlineKeyboardButton]] = []
+    for i in range(0, len(items), 2):
+        row = []
+        for key, cat in items[i:i + 2]:
+            row.append(InlineKeyboardButton(
+                f"{cat['label']} ({len(cat['tags'])})",
+                callback_data=f"cat:{key}",
+            ))
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def _tag_keyboard(query: str = "", page: int = 0, category: str = "") -> InlineKeyboardMarkup:
+    if category:
+        tags = TAGS_BY_CATEGORY[category]["tags"]
+        if query:
+            tags = [t for t in tags if query.lower() in t.lower()]
+    elif query:
+        tags = [t for t in ALL_TAGS if query.lower() in t.lower()]
+    else:
+        return _category_keyboard()
+
     total = len(tags)
     start = page * TAGS_PER_PAGE
     page_tags = tags[start:start + TAGS_PER_PAGE]
 
     buttons: list[list[InlineKeyboardButton]] = []
-
     if not page_tags:
         buttons.append([InlineKeyboardButton("— ничего не найдено —", callback_data="noop")])
     else:
         for t in page_tags:
             buttons.append([InlineKeyboardButton(t, callback_data=f"tag:{t}")])
 
-    # Pagination row
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀", callback_data=f"page:{page - 1}:{query}"))
+        nav.append(InlineKeyboardButton("◀", callback_data=f"page:{page - 1}:{category}"))
     if start + TAGS_PER_PAGE < total:
-        nav.append(InlineKeyboardButton("▶", callback_data=f"page:{page + 1}:{query}"))
+        nav.append(InlineKeyboardButton("▶", callback_data=f"page:{page + 1}:{category}"))
     if nav:
         buttons.append(nav)
 
+    if category:
+        buttons.append([InlineKeyboardButton("🔙 К категориям", callback_data="cat:back")])
     buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
     return InlineKeyboardMarkup(buttons)
 
@@ -446,10 +507,10 @@ async def cb_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     await query.edit_message_text(
         f"🖥 Сервер: `{server}`{warning}\n"
-        "*Шаг 2/3 — Выбери тест:*\n"
-        "_Или напиши часть названия для поиска_",
+        "*Шаг 2/3 — Выбери категорию:*\n"
+        "_Или напиши часть тега для поиска_",
         parse_mode="Markdown",
-        reply_markup=_tag_keyboard(),
+        reply_markup=_category_keyboard(),
     )
     return SELECT_TAG
 
@@ -465,26 +526,58 @@ async def cb_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if query.data == "noop":
         return SELECT_TAG
 
-    # Pagination
+    server = context.user_data.get("server", DEFAULT_SERVER)
+
+    # Category navigation
+    if query.data.startswith("cat:"):
+        cat_id = query.data[4:]
+        if cat_id == "back":
+            await query.edit_message_text(
+                f"🖥 Сервер: `{server}`\n\n"
+                "*Шаг 2/3 — Выбери категорию:*\n"
+                "_Или напиши часть тега для поиска_",
+                parse_mode="Markdown",
+                reply_markup=_category_keyboard(),
+            )
+        else:
+            cat_label = TAGS_BY_CATEGORY[cat_id]["label"]
+            await query.edit_message_text(
+                f"🖥 Сервер: `{server}`\n"
+                f"📁 {cat_label}\n\n"
+                "*Шаг 2/3 — Выбери тест:*\n"
+                "_Или напиши часть тега для поиска_",
+                parse_mode="Markdown",
+                reply_markup=_tag_keyboard(category=cat_id),
+            )
+        return SELECT_TAG
+
+    # Pagination: format is page:{n}:{cat_id}  (cat_id may be empty = global search)
     if query.data.startswith("page:"):
-        _, page_str, *q_parts = query.data.split(":")
-        q = ":".join(q_parts)  # query might contain colons
-        context.user_data["tag_query"] = q
-        server = context.user_data.get("server", DEFAULT_SERVER)
-        await query.edit_message_text(
-            f"🖥 Сервер: `{server}`\n\n*Шаг 2/3 — Выбери тест:*",
-            parse_mode="Markdown",
-            reply_markup=_tag_keyboard(q, int(page_str)),
-        )
+        parts = query.data.split(":", 2)
+        page_num = int(parts[1])
+        cat_id   = parts[2] if len(parts) > 2 else ""
+        q        = context.user_data.get("tag_query", "")
+        if cat_id:
+            cat_label = TAGS_BY_CATEGORY[cat_id]["label"]
+            await query.edit_message_text(
+                f"🖥 Сервер: `{server}`\n📁 {cat_label}\n\n*Шаг 2/3 — Выбери тест:*",
+                parse_mode="Markdown",
+                reply_markup=_tag_keyboard(category=cat_id, page=page_num),
+            )
+        else:
+            await query.edit_message_text(
+                f"🖥 Сервер: `{server}`\n\n*Шаг 2/3 — Поиск:* `{q}`",
+                parse_mode="Markdown",
+                reply_markup=_tag_keyboard(q, page_num),
+            )
         return SELECT_TAG
 
     _REGISTER_TAGS = {
-        "@RegisterCompany", "@RegisterCompanyAPI",
-        "@RegisterIndividual", "@RegisterIndividualAPI",
+        "@ClientRegisterCompany", "@ClientRegisterCompanyAPI",
+        "@ClientRegisterIndividual", "@ClientRegisterIndividualAPI",
     }
 
     tag    = query.data.split(":", 1)[1]
-    server = context.user_data["server"]
     context.user_data["tag"] = tag
     context.user_data["kbd_msg_id"] = query.message.message_id
 
@@ -512,6 +605,7 @@ async def msg_search_tag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception:
         pass
 
+    context.user_data["tag_query"] = query_text
     if kbd_msg_id:
         await context.bot.edit_message_text(
             chat_id=user_id,
@@ -959,7 +1053,7 @@ def main() -> None:
                 CallbackQueryHandler(cb_server, pattern=r"^(srv:|cancel$)"),
             ],
             SELECT_TAG: [
-                CallbackQueryHandler(cb_tag, pattern=r"^(tag:|page:|cancel$|noop$)"),
+                CallbackQueryHandler(cb_tag, pattern=r"^(tag:|page:|cat:|cancel$|noop$)"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, msg_search_tag),
             ],
             ENTER_PARAMS: [
