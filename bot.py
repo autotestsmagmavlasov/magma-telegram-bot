@@ -195,16 +195,21 @@ def _server_keyboard() -> InlineKeyboardMarkup:
 
 
 def _category_keyboard() -> InlineKeyboardMarkup:
-    items = list(TAGS_BY_CATEGORY.items())
+    # UI categories: 2 per row (short labels fit)
+    # API categories: 1 per row (labels too long for half-screen)
+    ui_row  = [(k, v) for k, v in TAGS_BY_CATEGORY.items() if not k.startswith("api")]
+    api_rows = [(k, v) for k, v in TAGS_BY_CATEGORY.items() if k.startswith("api")]
+
     buttons: list[list[InlineKeyboardButton]] = []
-    for i in range(0, len(items), 2):
-        row = []
-        for key, cat in items[i:i + 2]:
-            row.append(InlineKeyboardButton(
-                f"{cat['label']} ({len(cat['tags'])})",
-                callback_data=f"cat:{key}",
-            ))
-        buttons.append(row)
+    if ui_row:
+        buttons.append([
+            InlineKeyboardButton(f"{cat['label']} ({len(cat['tags'])})", callback_data=f"cat:{key}")
+            for key, cat in ui_row
+        ])
+    for key, cat in api_rows:
+        buttons.append([InlineKeyboardButton(
+            f"{cat['label']} ({len(cat['tags'])})", callback_data=f"cat:{key}",
+        )])
     buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
     return InlineKeyboardMarkup(buttons)
 
